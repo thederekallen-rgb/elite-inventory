@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -211,12 +210,13 @@
       <div class="table-scroll">
         <table>
           <thead><tr>
-            <th style="width:14%">Date / time</th><th style="width:13%">Tech</th>
-            <th style="width:21%">Product</th><th style="width:6%">Qty</th>
-            <th style="width:14%">Pad name</th><th style="width:12%">PO / job</th>
-            <th style="width:11%">State</th><th style="width:9%">Notes</th>
+            <th style="width:13%">Date / time</th><th style="width:12%">Tech</th>
+            <th style="width:19%">Product</th><th style="width:6%">Qty</th>
+            <th style="width:13%">Pad name</th><th style="width:11%">PO / job</th>
+            <th style="width:10%">State</th><th style="width:9%">Notes</th>
+            <th style="width:7%">Delete</th>
           </tr></thead>
-          <tbody id="log-table"><tr><td colspan="8" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
+          <tbody id="log-table"><tr><td colspan="9" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
         </table>
         <div class="empty" id="log-empty" style="display:none;">NO TRANSACTIONS YET</div>
       </div>
@@ -502,14 +502,14 @@ async function submitPull() {
       products: lines.map(l=>{ const p=inventory.find(x=>x.id===l.pid)||{name:''}; return {name:p.name,qty:l.qty}; })
     };
 
-    // Download link
-    const invoiceHTML = buildInvoiceHTML(invoiceData);
-    const blob = new Blob([invoiceHTML],{type:'text/html'});
-    const url = URL.createObjectURL(blob);
+    // Generate Word doc
+    btn.textContent='Generating invoice...';
+    const docBlob = await buildInvoiceDocx(invoiceData);
+    const url = URL.createObjectURL(docBlob);
     const dlLink = document.getElementById('invoice-dl');
     const dlWrap = document.getElementById('invoice-download-link');
     dlLink.href=url;
-    dlLink.download=`Invoice-${po}-${company.replace(/\s+/g,'-')}.html`;
+    dlLink.download=`Invoice-${po}-${company.replace(/\s+/g,'-')}.docx`;
     dlWrap.style.display='inline';
 
     // Email via Edge Function
@@ -538,8 +538,11 @@ async function submitPull() {
   btn.disabled=false; btn.textContent='Submit pull + generate invoice';
 }
 
-function buildInvoiceHTML(data) {
+async function buildInvoiceDocx(data) {
   const {date,invoiceNumber,company,companyRep,location,orderedBy,state,products,notes}=data;
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+          AlignmentType, BorderStyle, WidthType, ShadingType, VerticalAlign } = docx;
+
   const all=['Bolted Green Head Receiver (Head only)','Bolted 4" Flange Head Receiver (Head only)','Welded Green Head Anode Receiver 60" (Disposable)','Welded 4" Flange Head Anode Receiver (Disposable)','Anode Stick 60"','Anode Stick 40"','Tank Link Anode 12"','Elite Sensor','Extender / Sleeve','Install Tool','Truck/Tools/Labor','Other:'];
   const pm={};
   if(products) products.forEach(p=>{
@@ -557,18 +560,131 @@ function buildInvoiceHTML(data) {
       else if(n.includes('install tool')&&tp.includes('Install Tool'))pm[tp]=p.qty;
     });
   });
-  const rows=all.map(name=>{const q=pm[name];const hl=q?'background:#EBF3FB;font-weight:bold;':'';return`<tr><td style="border:1px solid #999;padding:6px 8px;text-align:center;width:60px;${hl}">${q||''}</td><td style="border:1px solid #999;padding:6px 8px;${hl}">${name}</td><td style="border:1px solid #999;padding:6px 8px;width:120px;"></td><td style="border:1px solid #999;padding:6px 8px;width:120px;"></td></tr>`;}).join('');
-  return`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,sans-serif;font-size:13px;color:#000;margin:0;padding:20px}table{border-collapse:collapse;width:100%}th{background:#1F3864;color:white;padding:7px 8px;text-align:left;font-size:13px}.lc{background:#D9D9D9;font-weight:bold;padding:6px 8px;border:1px solid #999;white-space:nowrap}.vc{padding:6px 8px;border:1px solid #999}@media print{.noprint{display:none}}</style></head><body>
-<table style="margin-bottom:16px;border:none;"><tr><td style="width:200px;border:none;padding:4px;vertical-align:middle;"><b style="font-size:24px;color:#1F3864;letter-spacing:2px;">ELITE</b><br><span style="font-size:11px;color:#555;letter-spacing:1px;">ENERGY SERVICES</span></td><td style="border:none;padding:4px;vertical-align:top;"><div><b>Date:</b> ${date}</div><div style="font-size:20px;font-weight:bold;margin:4px 0;">Invoice # ${invoiceNumber}</div><div style="font-size:11px;color:#555;">1122 East CR 140 &bull; Midland, TX 79706 &bull; derek@treaterpro.com</div></td></tr></table>
-<table style="margin-bottom:12px;"><tr><td class="lc" style="width:120px;">Company:</td><td class="vc">${company||''}</td><td class="lc" style="width:150px;">Service Company:</td><td class="vc">Elite Energy Services</td></tr><tr><td class="lc">Location:</td><td class="vc">${location||''}</td><td class="lc">Ordered By:</td><td class="vc">${orderedBy||''}</td></tr><tr><td class="lc">Company Rep:</td><td class="vc">${companyRep||''}</td><td class="lc">State:</td><td class="vc">${state||''}</td></tr></table>
-<p style="font-weight:bold;font-size:14px;margin:12px 0 6px;">Product Delivered</p>
-<table style="margin-bottom:12px;"><thead><tr><th style="width:60px;text-align:center;">QTY</th><th>Item Description</th><th style="width:120px;">Price Each</th><th style="width:120px;">Item Total</th></tr></thead><tbody>${rows}</tbody></table>
-<table style="margin-bottom:12px;"><tr><td class="lc">Description of Work:</td></tr><tr><td class="vc" style="height:60px;">${notes||''}</td></tr></table>
-<table style="width:300px;margin-bottom:16px;"><tr><td class="lc">Sub Total:</td><td class="vc"></td></tr><tr><td class="lc">Tax:</td><td class="vc"></td></tr><tr><td style="background:#1F3864;color:white;font-weight:bold;padding:6px 8px;border:1px solid #999;">Total:</td><td class="vc"></td></tr></table>
-<table style="margin-bottom:16px;"><tr><td class="lc">Electronically Authorized By:</td><td class="vc" style="width:200px;"></td><td class="lc">Vehicle Unit No.</td><td class="vc" style="width:120px;"></td></tr></table>
-<button class="noprint" onclick="window.print()" style="padding:8px 20px;background:#1F3864;color:white;border:none;cursor:pointer;font-size:13px;margin-right:8px;">🖨 Print / Save as PDF</button>
-</body></html>`;
+
+  const border = {style:BorderStyle.SINGLE,size:1,color:'999999'};
+  const bords = {top:border,bottom:border,left:border,right:border};
+  const noBord = {style:BorderStyle.NONE,size:0,color:'FFFFFF'};
+  const noBords = {top:noBord,bottom:noBord,left:noBord,right:noBord};
+  const cm = (t,opts={})=>new TableCell({
+    borders: opts.nb?noBords:bords,
+    width:{size:opts.w||1000,type:WidthType.DXA},
+    shading:opts.shade?{fill:opts.shade,type:ShadingType.CLEAR}:undefined,
+    margins:{top:60,bottom:60,left:100,right:100},
+    verticalAlign:VerticalAlign.CENTER,
+    columnSpan:opts.span||1,
+    children:[new Paragraph({alignment:opts.align||AlignmentType.LEFT,children:[new TextRun({text:String(t||''),bold:opts.bold||false,size:opts.sz||18,font:'Arial',color:opts.color||'000000'})]})]
+  });
+
+  const labelRow=(l1,v1,l2,v2)=>new TableRow({children:[
+    cm(l1,{w:1300,bold:true,shade:'D9D9D9',sz:18}),
+    cm(v1,{w:3600,sz:18}),
+    cm(l2,{w:1500,bold:true,shade:'D9D9D9',sz:18}),
+    cm(v2,{w:3600,sz:18})
+  ]});
+
+  const productRows = all.map(name=>{
+    const q=pm[name];
+    const shade=q?'EBF3FB':undefined;
+    return new TableRow({children:[
+      cm(q||'',{w:700,align:AlignmentType.CENTER,bold:!!q,shade,sz:18}),
+      cm(name,{w:4500,bold:!!q,shade,sz:18}),
+      cm('',{w:1800,sz:18}),
+      cm('',{w:1800,sz:18})
+    ]});
+  });
+
+  const doc = new Document({
+    sections:[{
+      properties:{page:{
+        size:{width:12240,height:15840},
+        margin:{top:500,right:500,bottom:500,left:500}
+      }},
+      children:[
+        // Header
+        new Table({
+          width:{size:11240,type:WidthType.DXA},
+          columnWidths:[3000,8240],
+          borders:{top:noBord,bottom:noBord,left:noBord,right:noBord,insideH:noBord,insideV:noBord},
+          rows:[new TableRow({children:[
+            new TableCell({borders:noBords,width:{size:3000,type:WidthType.DXA},margins:{top:0,bottom:0,left:0,right:100},children:[
+              new Paragraph({children:[new TextRun({text:'ELITE ENERGY SERVICES',bold:true,size:28,font:'Arial',color:'1F3864'})]}),
+              new Paragraph({children:[new TextRun({text:'1122 East CR 140  •  Midland, TX 79706',size:16,font:'Arial',color:'555555'})]}),
+              new Paragraph({children:[new TextRun({text:'derek@treaterpro.com',size:16,font:'Arial',color:'1F4E79'})]})
+            ]}),
+            new TableCell({borders:noBords,width:{size:8240,type:WidthType.DXA},margins:{top:0,bottom:0,left:100,right:0},children:[
+              new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:`Date: ${date}`,size:18,font:'Arial'})]}),
+              new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:`Invoice # ${invoiceNumber}`,bold:true,size:32,font:'Arial',color:'1F3864'})]}),
+            ]})
+          ]})]
+        }),
+        new Paragraph({spacing:{before:100,after:100},children:[new TextRun({text:''})]}),
+        // Info table
+        new Table({
+          width:{size:11240,type:WidthType.DXA},
+          columnWidths:[1300,3600,1500,3600],
+          rows:[
+            labelRow('Company:',company||'','Service Company:','Elite Energy Services'),
+            labelRow('Location:',location||'','Ordered By:',orderedBy||''),
+            labelRow('Company Rep:',companyRep||'','State:',state||''),
+          ]
+        }),
+        new Paragraph({spacing:{before:100,after:60},children:[new TextRun({text:'Product Delivered',bold:true,size:22,font:'Arial'})]}),
+        // Products table
+        new Table({
+          width:{size:11240,type:WidthType.DXA},
+          columnWidths:[700,4500,2520,2520,1000],
+          rows:[
+            new TableRow({tableHeader:true,children:[
+              new TableCell({borders:bords,width:{size:700,type:WidthType.DXA},shading:{fill:'1F3864',type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:100,right:100},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:'QTY',bold:true,size:18,font:'Arial',color:'FFFFFF'})]})]}),
+              new TableCell({borders:bords,width:{size:4500,type:WidthType.DXA},shading:{fill:'1F3864',type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:100,right:100},children:[new Paragraph({children:[new TextRun({text:'Item Description',bold:true,size:18,font:'Arial',color:'FFFFFF'})]})] }),
+              new TableCell({borders:bords,width:{size:2520,type:WidthType.DXA},shading:{fill:'1F3864',type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:100,right:100},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:'Price Each',bold:true,size:18,font:'Arial',color:'FFFFFF'})]})]}),
+              new TableCell({borders:bords,width:{size:2520,type:WidthType.DXA},shading:{fill:'1F3864',type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:100,right:100},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:'Item Total',bold:true,size:18,font:'Arial',color:'FFFFFF'})]})]}),
+            ]}),
+            ...productRows
+          ]
+        }),
+        new Paragraph({spacing:{before:100,after:60},children:[new TextRun({text:'Description of Work:',bold:true,size:18,font:'Arial'})]}),
+        new Table({
+          width:{size:11240,type:WidthType.DXA},
+          columnWidths:[11240],
+          rows:[new TableRow({children:[new TableCell({borders:bords,width:{size:11240,type:WidthType.DXA},margins:{top:60,bottom:60,left:100,right:100},children:[new Paragraph({children:[new TextRun({text:notes||'',size:18,font:'Arial'})]}),new Paragraph({children:[new TextRun({text:' '})]})]})]})],
+        }),
+        new Paragraph({spacing:{before:100,after:60},children:[new TextRun({text:''})]}),
+        // Totals + Auth side by side
+        new Table({
+          width:{size:11240,type:WidthType.DXA},
+          columnWidths:[3500,7740],
+          borders:{top:noBord,bottom:noBord,left:noBord,right:noBord,insideH:noBord,insideV:noBord},
+          rows:[new TableRow({children:[
+            new TableCell({borders:noBords,width:{size:3500,type:WidthType.DXA},children:[
+              new Table({width:{size:3500,type:WidthType.DXA},columnWidths:[1800,1700],rows:[
+                new TableRow({children:[cm('Sub Total:',{w:1800,bold:true,shade:'D9D9D9',sz:18}),cm('',{w:1700,sz:18})]}),
+                new TableRow({children:[cm('Tax:',{w:1800,bold:true,shade:'D9D9D9',sz:18}),cm('',{w:1700,sz:18})]}),
+                new TableRow({children:[
+                  new TableCell({borders:bords,width:{size:1800,type:WidthType.DXA},shading:{fill:'1F3864',type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:100,right:100},children:[new Paragraph({children:[new TextRun({text:'Total:',bold:true,size:20,font:'Arial',color:'FFFFFF'})]})] }),
+                  cm('',{w:1700,sz:20,bold:true})
+                ]})
+              ]})
+            ]}),
+            new TableCell({borders:noBords,width:{size:7740,type:WidthType.DXA},margins:{top:0,bottom:0,left:200,right:0},children:[
+              new Table({width:{size:7540,type:WidthType.DXA},columnWidths:[2800,2800,960,980],rows:[
+                new TableRow({children:[
+                  cm('Electronically Authorized By:',{w:2800,bold:true,shade:'D9D9D9',sz:16}),
+                  cm('',{w:2800,sz:18}),
+                  cm('Vehicle Unit No.',{w:960,bold:true,shade:'D9D9D9',sz:14}),
+                  cm('',{w:980,sz:18})
+                ]})
+              ]})
+            ]})
+          ]})]
+        }),
+      ]
+    }]
+  });
+
+  return await Packer.toBlob(doc);
 }
+
 
 // Log
 function populateLogFilters() {
@@ -611,8 +727,30 @@ function renderLog() {
       <td class="mono" style="font-size:11px">${t.po}</td>
       <td style="font-size:12px">${t.state.split(' ')[0]}</td>
       <td style="font-size:12px;color:var(--text-muted)">${t.notes||'—'}</td>
+      <td style="text-align:center;"><button onclick="deleteTransaction(${t.id},'${t.product.replace(/'/g,"\\'")}',${t.qty})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;padding:2px 6px;" title="Delete and restore inventory">×</button></td>
     </tr>`;
   }).join('');
+}
+
+async function deleteTransaction(id, product, qty) {
+  if (!confirm(`Delete this transaction and restore ${qty} unit(s) of "${product}" to inventory?`)) return;
+  try {
+    // Restore inventory
+    const p = inventory.find(x => x.name === product);
+    if (p) {
+      await api(`inventory?id=eq.${p.id}`, {method:'PATCH', prefer:'return=minimal', body: JSON.stringify({qty: p.qty + qty})});
+    }
+    // Delete transaction
+    await api(`transactions?id=eq.${id}`, {method:'DELETE', prefer:'return=minimal'});
+    // Log the correction
+    await api('transactions', {method:'POST', prefer:'return=minimal', body: JSON.stringify({
+      tech: 'Admin', state: 'Warehouse', product, qty,
+      pad: 'Transaction deleted', po: '—',
+      notes: `Restored ${qty} unit(s) — transaction #${id} deleted`
+    })});
+    await Promise.all([loadInventory(), loadTransactions()]);
+    renderLog();
+  } catch(e) { alert('Error deleting transaction. Try again.'); }
 }
 
 function exportCSV() {
@@ -792,5 +930,6 @@ async function init() {
 }
 init();
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js"></script>
 </body>
 </html>
