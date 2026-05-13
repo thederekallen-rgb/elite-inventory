@@ -186,7 +186,9 @@
       <div class="success-bar" id="pull-success">
         ✓ Pull logged — invoice emailed.
         <span id="invoice-download-link" style="margin-left:12px;display:none;">
-          <a id="invoice-dl" href="#" style="color:#4ec87a;text-decoration:underline;font-weight:600;">↓ Download invoice</a>
+          <a id="invoice-dl" href="#" target="_blank" style="color:#4ec87a;text-decoration:underline;font-weight:600;">↗ View & print invoice</a>
+          <span style="margin:0 8px;color:#4ec87a;opacity:0.5;">|</span>
+          <a id="invoice-docx-dl" href="#" style="color:#4ec87a;text-decoration:underline;font-weight:600;display:none;">↓ Word (.docx)</a>
         </span>
       </div>
     </div>
@@ -507,29 +509,42 @@ async function submitPull() {
       products: lines.map(l=>{ const p=inventory.find(x=>x.id===l.pid)||{name:''}; return {name:p.name,qty:l.qty}; })
     };
 
-    // Generate invoice — open in new tab
+    // Generate HTML invoice — open in new tab
     btn.textContent='Generating invoice...';
     const invoiceHTML = buildInvoiceDocx(invoiceData);
     const blob = new Blob([invoiceHTML],{type:'text/html'});
     const url = URL.createObjectURL(blob);
     const dlLink = document.getElementById('invoice-dl');
     const dlWrap = document.getElementById('invoice-download-link');
+    const docxLink = document.getElementById('invoice-docx-dl');
     dlLink.href=url;
     dlLink.target='_blank';
     dlLink.download='';
-    dlLink.textContent='↗ View & print invoice';
-    dlWrap.style.display='inline';
     dlWrap.style.display='inline';
 
-    // Email via Edge Function
+    // Email via Edge Function + get Word doc back
     btn.textContent='Sending invoice...';
     try {
-      await fetch(`${SB_URL}/functions/v1/generate-invoice`,{
+      const res = await fetch(`${SB_URL}/functions/v1/generate-invoice`,{
         method:'POST',
         headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},
         body:JSON.stringify(invoiceData)
       });
-    } catch(emailErr){ console.warn('Email failed, download still available'); }
+      if (res.ok) {
+        const result = await res.json();
+        if (result.docx && result.filename) {
+          // Build Word download link from base64
+          const binary = atob(result.docx);
+          const bytes = new Uint8Array(binary.length);
+          for (let i=0; i<binary.length; i++) bytes[i]=binary.charCodeAt(i);
+          const docxBlob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+          const docxUrl = URL.createObjectURL(docxBlob);
+          docxLink.href=docxUrl;
+          docxLink.download=result.filename;
+          docxLink.style.display='inline';
+        }
+      }
+    } catch(emailErr){ console.warn('Email/docx failed, HTML view still available'); }
 
     // Clear form
     ['f-tech','f-other-name','f-state','f-company','f-comprep','f-pad','f-po','f-notes'].forEach(id=>{
@@ -541,7 +556,7 @@ async function submitPull() {
 
     const msg=document.getElementById('pull-success');
     msg.style.display='block';
-    setTimeout(()=>{msg.style.display='none';dlWrap.style.display='none';},30000);
+    setTimeout(()=>{msg.style.display='none';dlWrap.style.display='none';docxLink.style.display='none';},30000);
 
   } catch(e){console.error(e);alert('Error saving. Check your connection.');}
   btn.disabled=false; btn.textContent='Submit pull + generate invoice';
