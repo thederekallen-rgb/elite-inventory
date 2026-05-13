@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elite Energy — CP Inventory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --navy: #0B1929; --navy-mid: #112240;
+    --accent: #E8A020; --accent-dim: #b47c18;
+    --danger: #d94040; --warning: #d97a20; --ok: #2e9e5b;
+    --text: #e8edf2; --text-muted: #7a9ab8; --text-dim: #4a6a8a;
+    --border: rgba(255,255,255,0.08); --border-bright: rgba(255,255,255,0.15);
+    --surface: rgba(255,255,255,0.04); --surface-hover: rgba(255,255,255,0.07);
+  }
+  body { font-family: 'Barlow', sans-serif; background: var(--navy); color: var(--text); min-height: 100vh; font-size: 15px; }
+  .header { background: var(--navy-mid); border-bottom: 1px solid var(--border-bright); padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-mark { width: 32px; height: 32px; background: var(--accent); display: flex; align-items: center; justify-content: center; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px; color: var(--navy); }
+  .logo-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 17px; letter-spacing: 1px; text-transform: uppercase; }
+  .logo-sub { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; }
+  .header-right { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-dim); }
+  .nav { background: var(--navy-mid); border-bottom: 1px solid var(--border); padding: 0 1.5rem; display: flex; overflow-x: auto; }
+  .nav-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: 12px 18px; font-family: 'Barlow', sans-serif; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap; letter-spacing: 0.5px; text-transform: uppercase; transition: color 0.15s, border-color 0.15s; }
+  .nav-btn:hover { color: var(--text); }
+  .nav-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+  .section { display: none; }
+  .section.active { display: block; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 1.5rem; }
+  .metric { background: var(--surface); border: 1px solid var(--border); padding: 1rem 1.25rem; position: relative; overflow: hidden; }
+  .metric::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--accent); }
+  .metric.danger::before { background: var(--danger); }
+  .metric.warning::before { background: var(--warning); }
+  .metric.ok::before { background: var(--ok); }
+  .metric-label { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+  .metric-value { font-family: 'Barlow Condensed', sans-serif; font-size: 28px; font-weight: 700; }
+  .metric.danger .metric-value { color: var(--danger); }
+  .metric.warning .metric-value { color: var(--warning); }
+  .card { background: var(--surface); border: 1px solid var(--border); margin-bottom: 1.5rem; }
+  .card-header { padding: 14px 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .card-title { font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); padding: 10px 1.25rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 11px 1.25rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface-hover); }
+  .mono { font-family: 'DM Mono', monospace; font-size: 12px; }
+  .badge { display: inline-block; font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.5px; padding: 3px 8px; text-transform: uppercase; }
+  .badge-ok { background: rgba(46,158,91,0.15); color: #4ec87a; border: 1px solid rgba(46,158,91,0.3); }
+  .badge-low { background: rgba(217,122,32,0.15); color: #f0a050; border: 1px solid rgba(217,122,32,0.3); }
+  .badge-critical { background: rgba(217,64,64,0.15); color: #f06060; border: 1px solid rgba(217,64,64,0.3); }
+  .bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .bar-track { flex: 1; height: 4px; background: var(--border-bright); max-width: 72px; }
+  .bar-fill { height: 100%; }
+  .form-card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; margin-bottom: 1.5rem; }
+  .form-title { font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 1.25rem; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .form-full { margin-bottom: 14px; }
+  label { display: block; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+  input, select, textarea { width: 100%; background: var(--navy); border: 1px solid var(--border-bright); color: var(--text); padding: 9px 12px; font-family: 'Barlow', sans-serif; font-size: 14px; outline: none; transition: border-color 0.15s; -webkit-appearance: none; border-radius: 0; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  select option { background: var(--navy-mid); }
+  textarea { resize: vertical; min-height: 72px; }
+  .qty-hint { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); margin-top: 4px; }
+  .qty-hint.warn { color: var(--warning); }
+  .btn-submit { background: var(--accent); color: var(--navy); border: none; padding: 11px 28px; font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; width: 100%; transition: background 0.15s; }
+  .btn-submit:hover { background: var(--accent-dim); }
+  .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+  .success-bar { background: rgba(46,158,91,0.15); border: 1px solid rgba(46,158,91,0.3); color: #4ec87a; padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 12px; margin-top: 12px; display: none; }
+  .filter-row { display: flex; gap: 8px; padding: 10px 1.25rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .filter-row select { flex: 1; min-width: 140px; font-size: 13px; padding: 7px 10px; }
+  .tech-row { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); gap: 12px; }
+  .tech-row:last-child { border-bottom: none; }
+  .tech-name { flex: 1; font-size: 14px; }
+  .btn-remove { background: none; border: 1px solid var(--border-bright); color: var(--text-muted); padding: 4px 10px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; cursor: pointer; }
+  .btn-remove:hover { border-color: var(--danger); color: var(--danger); }
+  .add-row { display: flex; gap: 8px; margin-top: 14px; }
+  .add-row input { flex: 1; }
+  .btn-add { background: none; border: 1px solid var(--border-bright); color: var(--text); padding: 9px 18px; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+  .btn-add:hover { border-color: var(--accent); color: var(--accent); }
+  .alert-banner { background: rgba(217,64,64,0.1); border: 1px solid rgba(217,64,64,0.3); border-left: 3px solid var(--danger); padding: 10px 14px; font-size: 13px; color: #f06060; margin-bottom: 1rem; display: none; }
+  .alert-banner.visible { display: block; }
+  .alert-banner strong { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; display: block; margin-bottom: 4px; }
+  .reorder-item { display: flex; align-items: center; padding: 10px 1.25rem; border-bottom: 1px solid var(--border); font-size: 13px; flex-wrap: wrap; gap: 8px; }
+  .reorder-item:last-child { border-bottom: none; }
+  .reorder-name { font-weight: 500; flex: 1; min-width: 180px; }
+  .reorder-detail { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-muted); }
+  .table-scroll { overflow-x: auto; }
+  .empty { text-align: center; padding: 3rem 1rem; color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 1px; }
+  .loading { text-align: center; padding: 2rem; color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 1px; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border-bright); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 580px) { .form-grid { grid-template-columns: 1fr; } .metrics { grid-template-columns: 1fr 1fr; } .header { padding: 0 1rem; } .main { padding: 1rem; } .nav-btn { padding: 12px 10px; font-size: 11px; } }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-mark">EE</div>
+    <div>
+      <div class="logo-text">Elite Energy Services</div>
+      <div class="logo-sub">CP Inventory — Main Warehouse</div>
+    </div>
+  </div>
+  <div class="header-right" id="clock"></div>
+</header>
+
+<nav class="nav">
+  <button class="nav-btn active" onclick="showTab('dashboard',this)">Dashboard</button>
+  <button class="nav-btn" onclick="showTab('pull',this)">Pull product</button>
+  <button class="nav-btn" onclick="showTab('log',this)">Transaction log</button>
+  <button class="nav-btn" onclick="showTab('reorder',this)">Reorder queue</button>
+  <button class="nav-btn" onclick="showTab('admin',this)">Admin</button>
+</nav>
+
+<main class="main">
+
+  <div id="dashboard" class="section active">
+    <div id="alert-banner" class="alert-banner"><strong>⚠ Reorder required</strong><span id="alert-text"></span></div>
+    <div class="metrics" id="metrics-row"><div class="loading"><span class="spinner"></span>Loading...</div></div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Inventory levels</span>
+        <span id="last-updated" style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);"></span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th style="width:36%">Product</th><th style="width:11%">In stock</th>
+            <th style="width:11%">Min stock</th><th style="width:16%">Status</th>
+            <th style="width:13%">Lead time</th><th style="width:13%">Level</th>
+          </tr></thead>
+          <tbody id="inv-table"><tr><td colspan="6" class="loading"><span class="spinner"></span>Loading inventory...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="pull" class="section">
+    <div class="form-card">
+      <div class="form-title">Log product pull</div>
+      <div class="form-grid">
+        <div><label>Tech name *</label><select id="f-tech"><option value="">Select tech...</option></select></div>
+        <div><label>State / region *</label>
+          <select id="f-state">
+            <option value="">Select state...</option>
+            <option>Texas (TX)</option>
+            <option>North Dakota — Bakken (ND)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div><label>Product *</label><select id="f-product" onchange="updateMaxQty()"><option value="">Select product...</option></select></div>
+        <div><label>Quantity *</label><input type="number" id="f-qty" min="1" placeholder="0" oninput="checkQty()"><div class="qty-hint" id="qty-hint"></div></div>
+      </div>
+      <div class="form-grid">
+        <div><label>Pad name *</label><input type="text" id="f-pad" placeholder="e.g. Murphy 14-22H"></div>
+        <div><label>PO / job number *</label><input type="text" id="f-po" placeholder="e.g. PO-2024-0881"></div>
+      </div>
+      <div class="form-full"><label>Notes (optional)</label><textarea id="f-notes" placeholder="Any relevant details..."></textarea></div>
+      <button class="btn-submit" id="pull-btn" onclick="submitPull()">Submit pull</button>
+      <div class="success-bar" id="pull-success">✓ Pull logged — inventory updated.</div>
+    </div>
+  </div>
+
+  <div id="log" class="section">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Transaction log</span>
+        <span id="log-count" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim);"></span>
+      </div>
+      <div class="filter-row">
+        <select id="log-filter-state" onchange="renderLog()"><option value="">All states</option><option>Texas (TX)</option><option>North Dakota — Bakken (ND)</option></select>
+        <select id="log-filter-product" onchange="renderLog()"><option value="">All products</option></select>
+        <select id="log-filter-tech" onchange="renderLog()"><option value="">All techs</option></select>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th style="width:14%">Date / time</th><th style="width:13%">Tech</th>
+            <th style="width:21%">Product</th><th style="width:6%">Qty</th>
+            <th style="width:14%">Pad name</th><th style="width:12%">PO / job</th>
+            <th style="width:11%">State</th><th style="width:9%">Notes</th>
+          </tr></thead>
+          <tbody id="log-table"><tr><td colspan="8" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
+        </table>
+        <div class="empty" id="log-empty" style="display:none;">NO TRANSACTIONS YET</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="reorder" class="section">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Reorder queue</span>
+        <span id="reorder-count" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim);"></span>
+      </div>
+      <div id="reorder-list"></div>
+      <div class="empty" id="reorder-empty" style="display:none;">ALL PRODUCTS ABOVE MINIMUM — NO REORDERS NEEDED</div>
+    </div>
+  </div>
+
+  <div id="admin" class="section">
+    <div class="form-card">
+      <div class="form-title">Adjust inventory</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:1.25rem;">Receive new stock, correct quantities, or update minimum thresholds.</p>
+      <div class="form-grid">
+        <div><label>Product *</label><select id="a-product"><option value="">Select product...</option></select></div>
+        <div><label>Action *</label>
+          <select id="a-action">
+            <option value="add">Add stock (receiving)</option>
+            <option value="set">Set exact quantity</option>
+            <option value="min">Update minimum stock level</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-full"><label>Quantity *</label><input type="number" id="a-qty" min="0" placeholder="0"></div>
+      <div class="form-full"><label>Reference / note</label><input type="text" id="a-note" placeholder="e.g. Received shipment from SEMCO — PO-2024-0112"></div>
+      <button class="btn-submit" id="admin-btn" onclick="submitAdmin()">Update inventory</button>
+      <div class="success-bar" id="admin-success">✓ Inventory updated.</div>
+    </div>
+    <div class="form-card">
+      <div class="form-title">Manage field techs</div>
+      <div id="tech-list"></div>
+      <div class="add-row"><input type="text" id="new-tech" placeholder="Full name..."><button class="btn-add" onclick="addTech()">Add tech</button></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const SB_URL = 'https://ctlanizvlvgspshzakjz.supabase.co';
+const SB_KEY = 'sb_publishable_Dx3qOKW8zq6qG6Akbjfw9A_K1bFZfWU';
+
+const api = (path, opts = {}) => fetch(`${SB_URL}/rest/v1/${path}`, {
+  headers: {
+    'apikey': SB_KEY,
+    'Authorization': `Bearer ${SB_KEY}`,
+    'Content-Type': 'application/json',
+    'Prefer': opts.prefer || 'return=representation',
+    ...(opts.extraHeaders || {})
+  },
+  method: opts.method || 'GET',
+  body: opts.body || undefined
+});
+
+let inventory = [], transactions = [], techs = [];
+
+// Clock
+function updateClock() {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' · ' +
+    new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+}
+updateClock(); setInterval(updateClock, 30000);
+
+// Nav
+function showTab(id, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+  if (id === 'log') loadTransactions().then(renderLog);
+  if (id === 'reorder') renderReorder();
+  if (id === 'admin') { populateAdminSelect(); renderTechList(); }
+}
+
+// Load
+async function loadInventory() {
+  const r = await api('inventory?order=name');
+  inventory = await r.json();
+  renderDashboard(); populatePullSelects(); populateLogFilters(); populateAdminSelect();
+}
+
+async function loadTransactions() {
+  const r = await api('transactions?order=created_at.desc&limit=500');
+  transactions = await r.json();
+}
+
+async function loadTechs() {
+  const r = await api('techs?order=name');
+  const d = await r.json();
+  techs = d.map(t => t.name);
+  populatePullSelects(); renderTechList();
+  const lft = document.getElementById('log-filter-tech');
+  if (lft) { lft.innerHTML = '<option value="">All techs</option>' + techs.map(t=>`<option>${t}</option>`).join(''); }
+}
+
+// Status
+function statusOf(qty, min) {
+  const r = qty/min;
+  if (r < 1)   return {label:'Reorder now', cls:'badge-critical', color:'var(--danger)',  pct:Math.min(100,Math.round(r*100))};
+  if (r < 1.3) return {label:'Low stock',   cls:'badge-low',      color:'var(--warning)', pct:Math.min(100,Math.round(r*100))};
+  return              {label:'OK',           cls:'badge-ok',       color:'var(--ok)',      pct:100};
+}
+
+// Dashboard
+function renderDashboard() {
+  const critical = inventory.filter(p=>p.qty<p.min_qty).length;
+  const low = inventory.filter(p=>{const r=p.qty/p.min_qty;return r>=1&&r<1.3;}).length;
+  const ok = inventory.filter(p=>p.qty/p.min_qty>=1.3).length;
+  document.getElementById('metrics-row').innerHTML = `
+    <div class="metric"><div class="metric-label">Total products</div><div class="metric-value">${inventory.length}</div></div>
+    <div class="metric danger"><div class="metric-label">Reorder now</div><div class="metric-value">${critical}</div></div>
+    <div class="metric warning"><div class="metric-label">Low stock</div><div class="metric-value">${low}</div></div>
+    <div class="metric ok"><div class="metric-label">OK</div><div class="metric-value">${ok}</div></div>
+    <div class="metric"><div class="metric-label">Transactions</div><div class="metric-value">${transactions.length}</div></div>`;
+
+  const criticals = inventory.filter(p=>p.qty<p.min_qty);
+  const banner = document.getElementById('alert-banner');
+  if (criticals.length) {
+    banner.classList.add('visible');
+    document.getElementById('alert-text').textContent = criticals.map(p=>`${p.name} (${p.qty} remaining, min ${p.min_qty})`).join(' · ');
+  } else banner.classList.remove('visible');
+
+  const sorted = [...inventory].sort((a,b)=>(a.qty/a.min_qty)-(b.qty/b.min_qty));
+  document.getElementById('inv-table').innerHTML = sorted.map(p => {
+    const s = statusOf(p.qty, p.min_qty);
+    const pct = Math.min(100, Math.round((p.qty/p.min_qty)*100));
+    return `<tr>
+      <td style="font-weight:500;font-size:13px">${p.name}</td>
+      <td class="mono">${p.qty.toLocaleString()}</td>
+      <td class="mono" style="color:var(--text-muted)">${p.min_qty.toLocaleString()}</td>
+      <td><span class="badge ${s.cls}">${s.label}</span></td>
+      <td style="font-size:12px;color:var(--text-muted)">${p.lead_time||'—'}</td>
+      <td><div class="bar-wrap"><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,pct)}%;background:${s.color}"></div></div><span class="mono" style="font-size:10px;color:var(--text-dim)">${pct}%</span></div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('last-updated').textContent = 'Updated '+new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  renderReorder();
+}
+
+// Pull
+function populatePullSelects() {
+  const ps = document.getElementById('f-product');
+  const cur = ps.value;
+  ps.innerHTML = '<option value="">Select product...</option>' + inventory.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  if (cur) ps.value = cur;
+  const ts = document.getElementById('f-tech');
+  const curT = ts.value;
+  ts.innerHTML = '<option value="">Select tech...</option>' + techs.map(t=>`<option>${t}</option>`).join('');
+  if (curT) ts.value = curT;
+}
+
+function updateMaxQty() {
+  const id = parseInt(document.getElementById('f-product').value);
+  const p = inventory.find(x=>x.id===id);
+  const hint = document.getElementById('qty-hint');
+  hint.className='qty-hint'; hint.textContent = p ? `${p.qty.toLocaleString()} available` : '';
+}
+
+function checkQty() {
+  const id = parseInt(document.getElementById('f-product').value);
+  const qty = parseInt(document.getElementById('f-qty').value)||0;
+  const p = inventory.find(x=>x.id===id);
+  const hint = document.getElementById('qty-hint');
+  if (!p) return;
+  if (qty>p.qty){hint.className='qty-hint warn';hint.textContent=`⚠ Only ${p.qty.toLocaleString()} in stock`;}
+  else{hint.className='qty-hint';hint.textContent=`${p.qty.toLocaleString()} available`;}
+}
+
+async function submitPull() {
+  const tech  = document.getElementById('f-tech').value.trim();
+  const state = document.getElementById('f-state').value.trim();
+  const prodId = parseInt(document.getElementById('f-product').value);
+  const qty   = parseInt(document.getElementById('f-qty').value)||0;
+  const pad   = document.getElementById('f-pad').value.trim();
+  const po    = document.getElementById('f-po').value.trim();
+  const notes = document.getElementById('f-notes').value.trim();
+  if (!tech||!state||!prodId||qty<=0||!pad||!po){alert('All required fields must be filled in.');return;}
+  const p = inventory.find(x=>x.id===prodId);
+  if (!p) return;
+  if (qty>p.qty){alert(`Only ${p.qty} units available.`);return;}
+  const btn = document.getElementById('pull-btn');
+  btn.disabled=true; btn.textContent='Saving...';
+  try {
+    await api('transactions',{method:'POST',prefer:'return=minimal',body:JSON.stringify({tech,state,product:p.name,qty,pad,po,notes})});
+    await api(`inventory?id=eq.${p.id}`,{method:'PATCH',prefer:'return=minimal',body:JSON.stringify({qty:p.qty-qty})});
+    await Promise.all([loadInventory(), loadTransactions()]);
+    ['f-tech','f-state','f-product','f-qty','f-pad','f-po','f-notes'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('qty-hint').textContent='';
+    const msg=document.getElementById('pull-success');msg.style.display='block';setTimeout(()=>msg.style.display='none',4000);
+  } catch(e){alert('Error saving. Check your connection.');}
+  btn.disabled=false; btn.textContent='Submit pull';
+}
+
+// Log
+function populateLogFilters() {
+  document.getElementById('log-filter-product').innerHTML = '<option value="">All products</option>' + inventory.map(p=>`<option>${p.name}</option>`).join('');
+  document.getElementById('log-filter-tech').innerHTML = '<option value="">All techs</option>' + techs.map(t=>`<option>${t}</option>`).join('');
+}
+
+function renderLog() {
+  const sf=document.getElementById('log-filter-state').value;
+  const pf=document.getElementById('log-filter-product').value;
+  const tf=document.getElementById('log-filter-tech').value;
+  let filtered=transactions.filter(t=>{
+    if(sf&&t.state!==sf)return false;
+    if(pf&&t.product!==pf)return false;
+    if(tf&&t.tech!==tf)return false;
+    return true;
+  });
+  document.getElementById('log-count').textContent=`${filtered.length} record${filtered.length!==1?'s':''}`;
+  const tbody=document.getElementById('log-table');
+  const empty=document.getElementById('log-empty');
+  if(!filtered.length){tbody.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  tbody.innerHTML=filtered.map(t=>{
+    const d=new Date(t.created_at);
+    const ds=d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    return`<tr>
+      <td class="mono" style="font-size:11px">${ds}</td>
+      <td style="font-size:13px">${t.tech}</td>
+      <td style="font-size:13px">${t.product}</td>
+      <td class="mono" style="font-weight:600">${t.qty}</td>
+      <td style="font-size:12px">${t.pad}</td>
+      <td class="mono" style="font-size:11px">${t.po}</td>
+      <td style="font-size:12px">${t.state.split(' ')[0]}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${t.notes||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Reorder
+function renderReorder() {
+  const needs=inventory.filter(p=>p.qty<p.min_qty);
+  const el=document.getElementById('reorder-list');
+  const empty=document.getElementById('reorder-empty');
+  if(!el)return;
+  document.getElementById('reorder-count').textContent=needs.length?`${needs.length} item${needs.length!==1?'s':''}` : '';
+  if(!needs.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=needs.sort((a,b)=>(a.qty/a.min_qty)-(b.qty/b.min_qty)).map(p=>`
+    <div class="reorder-item">
+      <span class="reorder-name">${p.name}</span>
+      <span class="reorder-detail">In stock: ${p.qty.toLocaleString()}</span>
+      <span class="reorder-detail">Min: ${p.min_qty.toLocaleString()}</span>
+      <span class="reorder-detail" style="color:var(--danger)">Short ${(p.min_qty-p.qty).toLocaleString()}</span>
+      <span class="reorder-detail" style="color:var(--text-dim)">${p.lead_time||'Lead time unknown'}</span>
+    </div>`).join('');
+}
+
+// Admin
+function populateAdminSelect() {
+  const sel=document.getElementById('a-product');
+  if(!sel)return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="">Select product...</option>'+inventory.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  if(cur)sel.value=cur;
+}
+
+async function submitAdmin() {
+  const prodId=parseInt(document.getElementById('a-product').value);
+  const action=document.getElementById('a-action').value;
+  const qty=parseInt(document.getElementById('a-qty').value);
+  const note=document.getElementById('a-note').value.trim();
+  if(!prodId||isNaN(qty)||qty<0){alert('Select a product and enter a valid quantity.');return;}
+  const p=inventory.find(x=>x.id===prodId);
+  if(!p)return;
+  const btn=document.getElementById('admin-btn');
+  btn.disabled=true;btn.textContent='Saving...';
+  try {
+    let newQty=p.qty, newMin=p.min_qty;
+    if(action==='add')newQty=p.qty+qty;
+    else if(action==='set')newQty=qty;
+    else if(action==='min')newMin=qty;
+    await api(`inventory?id=eq.${p.id}`,{method:'PATCH',prefer:'return=minimal',body:JSON.stringify({qty:newQty,min_qty:newMin})});
+    await api('transactions',{method:'POST',prefer:'return=minimal',body:JSON.stringify({
+      tech:'Admin',state:'Warehouse',product:p.name,
+      qty:action==='min'?0:qty,
+      pad:action==='add'?'Stock received':action==='min'?'Min updated':'Manual correction',
+      po:'—',
+      notes:note||(action==='add'?'Stock added':action==='min'?`Min set to ${qty}`:`Qty set to ${qty}`)
+    })});
+    await loadInventory();
+    document.getElementById('a-product').value='';
+    document.getElementById('a-qty').value='';
+    document.getElementById('a-note').value='';
+    const msg=document.getElementById('admin-success');msg.style.display='block';setTimeout(()=>msg.style.display='none',4000);
+  } catch(e){alert('Error updating. Check your connection.');}
+  btn.disabled=false;btn.textContent='Update inventory';
+}
+
+function renderTechList() {
+  document.getElementById('tech-list').innerHTML=techs.map((t,i)=>`
+    <div class="tech-row"><span class="tech-name">${t}</span><button class="btn-remove" onclick="removeTech(${i})">Remove</button></div>`).join('');
+}
+
+async function addTech() {
+  const val=document.getElementById('new-tech').value.trim();
+  if(!val)return;
+  await api('techs',{method:'POST',prefer:'return=minimal',body:JSON.stringify({name:val})});
+  document.getElementById('new-tech').value='';
+  await loadTechs();
+}
+
+async function removeTech(i) {
+  if(!confirm(`Remove ${techs[i]}?`))return;
+  await api(`techs?name=eq.${encodeURIComponent(techs[i])}`,{method:'DELETE',prefer:'return=minimal'});
+  await loadTechs();
+}
+
+// Init
+async function init() {
+  await Promise.all([loadInventory(), loadTransactions(), loadTechs()]);
+  renderLog();
+}
+init();
+</script>
+</body>
+</html>
