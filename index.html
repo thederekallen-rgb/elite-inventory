@@ -541,7 +541,7 @@ async function submitPull() {
 async function buildInvoiceDocx(data) {
   const {date,invoiceNumber,company,companyRep,location,orderedBy,state,products,notes}=data;
   const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
-          AlignmentType, BorderStyle, WidthType, ShadingType, VerticalAlign } = docx;
+          AlignmentType, BorderStyle, WidthType, ShadingType, VerticalAlign } = window.docx;
 
   const all=['Bolted Green Head Receiver (Head only)','Bolted 4" Flange Head Receiver (Head only)','Welded Green Head Anode Receiver 60" (Disposable)','Welded 4" Flange Head Anode Receiver (Disposable)','Anode Stick 60"','Anode Stick 40"','Tank Link Anode 12"','Elite Sensor','Extender / Sleeve','Install Tool','Truck/Tools/Labor','Other:'];
   const pm={};
