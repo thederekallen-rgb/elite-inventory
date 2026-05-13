@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -160,6 +161,10 @@
         </div>
       </div>
       <div class="form-grid">
+        <div><label>Company (operator) *</label><input type="text" id="f-company" placeholder="e.g. Murphy Oil"></div>
+        <div><label>Company rep</label><input type="text" id="f-comprep" placeholder="e.g. John Smith"></div>
+      </div>
+      <div class="form-grid">
         <div><label>Pad name *</label><input type="text" id="f-pad" placeholder="e.g. Murphy 14-22H"></div>
         <div><label>PO / job number *</label><input type="text" id="f-po" placeholder="e.g. PO-2024-0881"></div>
       </div>
@@ -173,8 +178,13 @@
       </div>
 
       <div class="form-full"><label>Notes (optional)</label><textarea id="f-notes" placeholder="Any relevant details..."></textarea></div>
-      <button class="btn-submit" id="pull-btn" onclick="submitPull()">Submit pull</button>
-      <div class="success-bar" id="pull-success">✓ Pull logged — inventory updated.</div>
+      <button class="btn-submit" id="pull-btn" onclick="submitPull()">Submit pull + generate invoice</button>
+      <div class="success-bar" id="pull-success">
+        ✓ Pull logged — invoice emailed.
+        <span id="invoice-download-link" style="margin-left:12px;display:none;">
+          <a id="invoice-dl" href="#" style="color:#4ec87a;text-decoration:underline;font-weight:600;">↓ Download invoice</a>
+        </span>
+      </div>
     </div>
   </div>
 
@@ -253,6 +263,12 @@
       <div id="tech-list"></div>
       <div class="add-row"><input type="text" id="new-tech" placeholder="Full name..."><button class="btn-add" onclick="addTech()">Add tech</button></div>
     </div>
+    <div class="form-card">
+      <div class="form-title">Invoice recipients</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:1.25rem;">Invoices are emailed to these addresses after every pull submission.</p>
+      <div id="recipient-list"></div>
+      <div class="add-row"><input type="email" id="new-recipient" placeholder="email@example.com"><button class="btn-add" onclick="addRecipient()">Add email</button></div>
+    </div>
   </div>
 
 </main>
@@ -291,7 +307,7 @@ function showTab(id, btn) {
   btn.classList.add('active');
   if (id === 'log') loadTransactions().then(renderLog);
   if (id === 'reorder') renderReorder();
-  if (id === 'admin') { populateAdminSelect(); renderTechList(); renderMinQtyGrid(); }
+  if (id === 'admin') { populateAdminSelect(); renderTechList(); renderMinQtyGrid(); loadRecipients(); }
 }
 
 // Load
@@ -442,24 +458,26 @@ function getProductLines() {
 }
 
 async function submitPull() {
-  const techSel  = document.getElementById('f-tech').value.trim();
+  const techSel   = document.getElementById('f-tech').value.trim();
   const otherName = document.getElementById('f-other-name').value.trim();
-  const tech = techSel === '__other__' ? otherName : techSel;
-  const state = document.getElementById('f-state').value.trim();
-  const pad   = document.getElementById('f-pad').value.trim();
-  const po    = document.getElementById('f-po').value.trim();
-  const notes = document.getElementById('f-notes').value.trim();
-  const lines = getProductLines();
+  const tech      = techSel === '__other__' ? otherName : techSel;
+  const state     = document.getElementById('f-state').value.trim();
+  const company   = document.getElementById('f-company').value.trim();
+  const companyRep= document.getElementById('f-comprep').value.trim();
+  const pad       = document.getElementById('f-pad').value.trim();
+  const po        = document.getElementById('f-po').value.trim();
+  const notes     = document.getElementById('f-notes').value.trim();
+  const lines     = getProductLines();
 
   if (!techSel){alert('Select a tech.');return;}
-  if (techSel === '__other__' && !otherName){alert('Enter the name of the person pulling product.');return;}
-  if (!state||!pad||!po){alert('State, pad name, and PO are required.');return;}
+  if (techSel==='__other__'&&!otherName){alert('Enter the name of the person pulling product.');return;}
+  if (!state||!company||!pad||!po){alert('State, company, pad name, and PO are all required.');return;}
   if (!lines.length){alert('Add at least one product.');return;}
 
   for (const line of lines) {
     const p = inventory.find(x=>x.id===line.pid);
     if (!p) continue;
-    if (line.qty > p.qty){alert(`Only ${p.qty} units of "${p.name}" available.`);return;}
+    if (line.qty>p.qty){alert(`Only ${p.qty} units of "${p.name}" available.`);return;}
   }
 
   const btn = document.getElementById('pull-btn');
@@ -468,29 +486,88 @@ async function submitPull() {
   try {
     for (const line of lines) {
       const p = inventory.find(x=>x.id===line.pid);
-      await api('transactions',{method:'POST',prefer:'return=minimal',body:JSON.stringify({tech,state,product:p.name,qty:line.qty,pad,po,notes})});
+      await api('transactions',{method:'POST',prefer:'return=minimal',body:JSON.stringify({
+        tech,state,product:p.name,qty:line.qty,pad,po,notes,
+        company,company_rep:companyRep
+      })});
       await api(`inventory?id=eq.${p.id}`,{method:'PATCH',prefer:'return=minimal',body:JSON.stringify({qty:p.qty-line.qty})});
     }
-
     await Promise.all([loadInventory(), loadTransactions()]);
 
-    document.getElementById('f-tech').value='';
-    document.getElementById('f-other-name').value='';
+    // Build invoice
+    const invoiceData = {
+      date: new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}),
+      invoiceNumber: po, company, companyRep, location: pad,
+      orderedBy: tech, state, notes,
+      products: lines.map(l=>{ const p=inventory.find(x=>x.id===l.pid)||{name:''}; return {name:p.name,qty:l.qty}; })
+    };
+
+    // Download link
+    const invoiceHTML = buildInvoiceHTML(invoiceData);
+    const blob = new Blob([invoiceHTML],{type:'text/html'});
+    const url = URL.createObjectURL(blob);
+    const dlLink = document.getElementById('invoice-dl');
+    const dlWrap = document.getElementById('invoice-download-link');
+    dlLink.href=url;
+    dlLink.download=`Invoice-${po}-${company.replace(/\s+/g,'-')}.html`;
+    dlWrap.style.display='inline';
+
+    // Email via Edge Function
+    btn.textContent='Sending invoice...';
+    try {
+      await fetch(`${SB_URL}/functions/v1/generate-invoice`,{
+        method:'POST',
+        headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},
+        body:JSON.stringify(invoiceData)
+      });
+    } catch(emailErr){ console.warn('Email failed, download still available'); }
+
+    // Clear form
+    ['f-tech','f-other-name','f-state','f-company','f-comprep','f-pad','f-po','f-notes'].forEach(id=>{
+      const el=document.getElementById(id); el.value='';
+    });
     document.getElementById('f-other-name').style.display='none';
-    document.getElementById('f-state').value='';
-    document.getElementById('f-pad').value='';
-    document.getElementById('f-po').value='';
-    document.getElementById('f-notes').value='';
     document.getElementById('product-lines').innerHTML='';
-    lineCount=0;
-    addProductLine();
+    lineCount=0; addProductLine();
 
     const msg=document.getElementById('pull-success');
     msg.style.display='block';
-    setTimeout(()=>msg.style.display='none',4000);
-  } catch(e){alert('Error saving. Check your connection.');}
+    setTimeout(()=>{msg.style.display='none';dlWrap.style.display='none';},30000);
 
-  btn.disabled=false; btn.textContent='Submit pull';
+  } catch(e){console.error(e);alert('Error saving. Check your connection.');}
+  btn.disabled=false; btn.textContent='Submit pull + generate invoice';
+}
+
+function buildInvoiceHTML(data) {
+  const {date,invoiceNumber,company,companyRep,location,orderedBy,state,products,notes}=data;
+  const all=['Bolted Green Head Receiver (Head only)','Bolted 4" Flange Head Receiver (Head only)','Welded Green Head Anode Receiver 60" (Disposable)','Welded 4" Flange Head Anode Receiver (Disposable)','Anode Stick 60"','Anode Stick 40"','Tank Link Anode 12"','Elite Sensor','Extender / Sleeve','Install Tool','Truck/Tools/Labor','Other:'];
+  const pm={};
+  if(products) products.forEach(p=>{
+    const n=p.name.toLowerCase();
+    all.forEach(tp=>{
+      if(n.includes('bolted green')&&tp.includes('Bolted Green'))pm[tp]=p.qty;
+      else if(n.includes('bolted 4')&&tp.includes('Bolted 4'))pm[tp]=p.qty;
+      else if(n.includes('welded green head anode')&&tp.includes('Welded Green Head Anode'))pm[tp]=p.qty;
+      else if(n.includes('welded 4')&&tp.includes('Welded 4'))pm[tp]=p.qty;
+      else if(n.includes('anode stick 60')&&tp.includes('60"')&&tp.includes('Anode Stick'))pm[tp]=p.qty;
+      else if(n.includes('anode stick 40')&&tp.includes('40"'))pm[tp]=p.qty;
+      else if(n.includes('tank link')&&tp.includes('Tank Link'))pm[tp]=p.qty;
+      else if(n.includes('elite sensor')&&tp.includes('Elite Sensor'))pm[tp]=p.qty;
+      else if(n.includes('extender')&&tp.includes('Extender'))pm[tp]=p.qty;
+      else if(n.includes('install tool')&&tp.includes('Install Tool'))pm[tp]=p.qty;
+    });
+  });
+  const rows=all.map(name=>{const q=pm[name];const hl=q?'background:#EBF3FB;font-weight:bold;':'';return`<tr><td style="border:1px solid #999;padding:6px 8px;text-align:center;width:60px;${hl}">${q||''}</td><td style="border:1px solid #999;padding:6px 8px;${hl}">${name}</td><td style="border:1px solid #999;padding:6px 8px;width:120px;"></td><td style="border:1px solid #999;padding:6px 8px;width:120px;"></td></tr>`;}).join('');
+  return`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,sans-serif;font-size:13px;color:#000;margin:0;padding:20px}table{border-collapse:collapse;width:100%}th{background:#1F3864;color:white;padding:7px 8px;text-align:left;font-size:13px}.lc{background:#D9D9D9;font-weight:bold;padding:6px 8px;border:1px solid #999;white-space:nowrap}.vc{padding:6px 8px;border:1px solid #999}@media print{.noprint{display:none}}</style></head><body>
+<table style="margin-bottom:16px;border:none;"><tr><td style="width:200px;border:none;padding:4px;vertical-align:middle;"><b style="font-size:24px;color:#1F3864;letter-spacing:2px;">ELITE</b><br><span style="font-size:11px;color:#555;letter-spacing:1px;">ENERGY SERVICES</span></td><td style="border:none;padding:4px;vertical-align:top;"><div><b>Date:</b> ${date}</div><div style="font-size:20px;font-weight:bold;margin:4px 0;">Invoice # ${invoiceNumber}</div><div style="font-size:11px;color:#555;">1122 East CR 140 &bull; Midland, TX 79706 &bull; derek@treaterpro.com</div></td></tr></table>
+<table style="margin-bottom:12px;"><tr><td class="lc" style="width:120px;">Company:</td><td class="vc">${company||''}</td><td class="lc" style="width:150px;">Service Company:</td><td class="vc">Elite Energy Services</td></tr><tr><td class="lc">Location:</td><td class="vc">${location||''}</td><td class="lc">Ordered By:</td><td class="vc">${orderedBy||''}</td></tr><tr><td class="lc">Company Rep:</td><td class="vc">${companyRep||''}</td><td class="lc">State:</td><td class="vc">${state||''}</td></tr></table>
+<p style="font-weight:bold;font-size:14px;margin:12px 0 6px;">Product Delivered</p>
+<table style="margin-bottom:12px;"><thead><tr><th style="width:60px;text-align:center;">QTY</th><th>Item Description</th><th style="width:120px;">Price Each</th><th style="width:120px;">Item Total</th></tr></thead><tbody>${rows}</tbody></table>
+<table style="margin-bottom:12px;"><tr><td class="lc">Description of Work:</td></tr><tr><td class="vc" style="height:60px;">${notes||''}</td></tr></table>
+<table style="width:300px;margin-bottom:16px;"><tr><td class="lc">Sub Total:</td><td class="vc"></td></tr><tr><td class="lc">Tax:</td><td class="vc"></td></tr><tr><td style="background:#1F3864;color:white;font-weight:bold;padding:6px 8px;border:1px solid #999;">Total:</td><td class="vc"></td></tr></table>
+<table style="margin-bottom:16px;"><tr><td class="lc">Electronically Authorized By:</td><td class="vc" style="width:200px;"></td><td class="lc">Vehicle Unit No.</td><td class="vc" style="width:120px;"></td></tr></table>
+<button class="noprint" onclick="window.print()" style="padding:8px 20px;background:#1F3864;color:white;border:none;cursor:pointer;font-size:13px;margin-right:8px;">🖨 Print / Save as PDF</button>
+</body></html>`;
 }
 
 // Log
@@ -668,6 +745,43 @@ async function removeTech(i) {
   if(!confirm(`Remove ${techs[i]}?`))return;
   await api(`techs?name=eq.${encodeURIComponent(techs[i])}`,{method:'DELETE',prefer:'return=minimal'});
   await loadTechs();
+}
+
+// Recipients
+let recipients = [];
+
+async function loadRecipients() {
+  try {
+    const r = await api('invoice_recipients?order=email');
+    const d = await r.json();
+    recipients = Array.isArray(d) ? d : [];
+    renderRecipientList();
+  } catch(e) { recipients = []; }
+}
+
+function renderRecipientList() {
+  const el = document.getElementById('recipient-list');
+  if(!el) return;
+  if(!recipients.length){el.innerHTML='<p style="font-size:13px;color:var(--text-muted);padding:8px 0;">No recipients yet — invoices will go to the default address.</p>';return;}
+  el.innerHTML = recipients.map((r,i)=>`
+    <div class="tech-row">
+      <span class="tech-name">${r.email}</span>
+      <button class="btn-remove" onclick="removeRecipient(${i})">Remove</button>
+    </div>`).join('');
+}
+
+async function addRecipient() {
+  const val = document.getElementById('new-recipient').value.trim();
+  if(!val||!val.includes('@')){alert('Enter a valid email address.');return;}
+  await api('invoice_recipients',{method:'POST',prefer:'return=minimal',body:JSON.stringify({email:val})});
+  document.getElementById('new-recipient').value='';
+  await loadRecipients();
+}
+
+async function removeRecipient(i) {
+  if(!confirm(`Remove ${recipients[i].email}?`))return;
+  await api(`invoice_recipients?id=eq.${recipients[i].id}`,{method:'DELETE',prefer:'return=minimal'});
+  await loadRecipients();
 }
 
 // Init
