@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -502,14 +503,18 @@ async function submitPull() {
       products: lines.map(l=>{ const p=inventory.find(x=>x.id===l.pid)||{name:''}; return {name:p.name,qty:l.qty}; })
     };
 
-    // Generate Word doc
+    // Generate invoice — open in new tab
     btn.textContent='Generating invoice...';
-    const docBlob = await buildInvoiceDocx(invoiceData);
-    const url = URL.createObjectURL(docBlob);
+    const invoiceHTML = buildInvoiceDocx(invoiceData);
+    const blob = new Blob([invoiceHTML],{type:'text/html'});
+    const url = URL.createObjectURL(blob);
     const dlLink = document.getElementById('invoice-dl');
     const dlWrap = document.getElementById('invoice-download-link');
     dlLink.href=url;
-    dlLink.download=`Invoice-${po}-${company.replace(/\s+/g,'-')}.docx`;
+    dlLink.target='_blank';
+    dlLink.download='';
+    dlLink.textContent='↗ View & print invoice';
+    dlWrap.style.display='inline';
     dlWrap.style.display='inline';
 
     // Email via Edge Function
@@ -538,10 +543,86 @@ async function submitPull() {
   btn.disabled=false; btn.textContent='Submit pull + generate invoice';
 }
 
-async function buildInvoiceDocx(data) {
+function buildInvoiceDocx(data) {
   const {date,invoiceNumber,company,companyRep,location,orderedBy,state,products,notes}=data;
-  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
-          AlignmentType, BorderStyle, WidthType, ShadingType, VerticalAlign } = window.docx;
+  const all=['Bolted Green Head Receiver (Head only)','Bolted 4" Flange Head Receiver (Head only)','Welded Green Head Anode Receiver 60" (Disposable)','Welded 4" Flange Head Anode Receiver (Disposable)','Anode Stick 60"','Anode Stick 40"','Tank Link Anode 12"','Elite Sensor','Extender / Sleeve','Install Tool','Truck/Tools/Labor','Other:'];
+  const pm={};
+  if(products) products.forEach(p=>{
+    const n=p.name.toLowerCase();
+    all.forEach(tp=>{
+      if(n.includes('bolted green')&&tp.includes('Bolted Green'))pm[tp]=p.qty;
+      else if(n.includes('bolted 4')&&tp.includes('Bolted 4'))pm[tp]=p.qty;
+      else if(n.includes('welded green head anode')&&tp.includes('Welded Green Head Anode'))pm[tp]=p.qty;
+      else if(n.includes('welded 4')&&tp.includes('Welded 4'))pm[tp]=p.qty;
+      else if(n.includes('anode stick 60')&&tp.includes('60"')&&tp.includes('Anode Stick'))pm[tp]=p.qty;
+      else if(n.includes('anode stick 40')&&tp.includes('40"'))pm[tp]=p.qty;
+      else if(n.includes('tank link')&&tp.includes('Tank Link'))pm[tp]=p.qty;
+      else if(n.includes('elite sensor')&&tp.includes('Elite Sensor'))pm[tp]=p.qty;
+      else if(n.includes('extender')&&tp.includes('Extender'))pm[tp]=p.qty;
+      else if(n.includes('install tool')&&tp.includes('Install Tool'))pm[tp]=p.qty;
+    });
+  });
+  const rows=all.map(name=>{
+    const q=pm[name];
+    const hl=q?'background:#EBF3FB;font-weight:bold;':'';
+    return`<tr><td style="border:1px solid #bbb;padding:5px 8px;text-align:center;width:50px;${hl}">${q||''}</td><td style="border:1px solid #bbb;padding:5px 8px;${hl}">${name}</td><td style="border:1px solid #bbb;padding:5px 8px;width:100px;"></td><td style="border:1px solid #bbb;padding:5px 8px;width:100px;"></td></tr>`;
+  }).join('');
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${invoiceNumber}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:12px;color:#000;padding:16px;max-width:750px;margin:0 auto}
+table{border-collapse:collapse;width:100%}
+.lc{background:#D9D9D9;font-weight:bold;padding:5px 7px;border:1px solid #bbb;white-space:nowrap;font-size:11px}
+.vc{padding:5px 7px;border:1px solid #bbb;font-size:12px}
+th{background:#1F3864;color:white;padding:5px 7px;text-align:left;font-size:11px;border:1px solid #1F3864}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #1F3864}
+.co-name{font-size:18px;font-weight:bold;color:#1F3864;letter-spacing:1px}
+.co-sub{font-size:10px;color:#666;margin-top:2px}
+.inv-num{font-size:20px;font-weight:bold;color:#1F3864;text-align:right}
+.inv-date{font-size:11px;color:#444;text-align:right;margin-bottom:3px}
+.section{margin:8px 0 4px;font-weight:bold;font-size:12px}
+.noprint{display:flex;gap:8px;margin-top:12px}
+@media print{.noprint{display:none!important}body{padding:8px}@page{margin:0.4in;size:letter}}
+</style></head><body>
+<div class="hdr">
+  <div>
+    <div class="co-name">ELITE ENERGY SERVICES</div>
+    <div class="co-sub">1122 East CR 140 &bull; Midland, TX 79706 &bull; derek@treaterpro.com</div>
+  </div>
+  <div>
+    <div class="inv-date">Date: ${date}</div>
+    <div class="inv-num">Invoice # ${invoiceNumber}</div>
+  </div>
+</div>
+<table style="margin-bottom:8px">
+  <tr><td class="lc" style="width:110px">Company:</td><td class="vc">${company||''}</td><td class="lc" style="width:130px">Service Company:</td><td class="vc">Elite Energy Services</td></tr>
+  <tr><td class="lc">Location:</td><td class="vc">${location||''}</td><td class="lc">Ordered By:</td><td class="vc">${orderedBy||''}</td></tr>
+  <tr><td class="lc">Company Rep:</td><td class="vc">${companyRep||''}</td><td class="lc">State:</td><td class="vc">${state||''}</td></tr>
+</table>
+<div class="section">Product Delivered</div>
+<table style="margin-bottom:8px">
+  <thead><tr><th style="width:50px;text-align:center">QTY</th><th>Item Description</th><th style="width:100px;text-align:center">Price Each</th><th style="width:100px;text-align:center">Item Total</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="section">Description of Work:</div>
+<table style="margin-bottom:8px"><tr><td class="vc" style="height:50px">${notes||''}</td></tr></table>
+<div style="display:flex;justify-content:space-between;align-items:flex-end">
+  <table style="width:260px">
+    <tr><td class="lc">Sub Total:</td><td class="vc"></td></tr>
+    <tr><td class="lc">Tax:</td><td class="vc"></td></tr>
+    <tr><td style="background:#1F3864;color:white;font-weight:bold;padding:5px 7px;border:1px solid #1F3864;font-size:12px">Total:</td><td class="vc"></td></tr>
+  </table>
+  <table style="width:420px">
+    <tr><td class="lc" style="width:160px">Electronically Authorized By:</td><td class="vc"></td><td class="lc" style="width:90px">Vehicle Unit No.</td><td class="vc" style="width:90px"></td></tr>
+  </table>
+</div>
+<div class="noprint">
+  <button onclick="window.print()" style="padding:8px 20px;background:#1F3864;color:white;border:none;cursor:pointer;font-size:12px">Print / Save as PDF</button>
+  <button onclick="window.close()" style="padding:8px 16px;background:none;border:1px solid #999;cursor:pointer;font-size:12px">Close</button>
+</div>
+</body></html>`;
+  return html;
+}
 
   const all=['Bolted Green Head Receiver (Head only)','Bolted 4" Flange Head Receiver (Head only)','Welded Green Head Anode Receiver 60" (Disposable)','Welded 4" Flange Head Anode Receiver (Disposable)','Anode Stick 60"','Anode Stick 40"','Tank Link Anode 12"','Elite Sensor','Extender / Sleeve','Install Tool','Truck/Tools/Labor','Other:'];
   const pm={};
@@ -930,6 +1011,5 @@ async function init() {
 }
 init();
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js"></script>
 </body>
 </html>
