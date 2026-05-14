@@ -509,7 +509,7 @@ async function submitPull() {
       products: lines.map(l=>{ const p=inventory.find(x=>x.id===l.pid)||{name:''}; return {name:p.name,qty:l.qty}; })
     };
 
-    // Generate HTML invoice — open in new tab
+    // Generate HTML invoice — show immediately, don't wait for email
     btn.textContent='Generating invoice...';
     const invoiceHTML = buildInvoiceDocx(invoiceData);
     const blob = new Blob([invoiceHTML],{type:'text/html'});
@@ -522,33 +522,9 @@ async function submitPull() {
     dlLink.download='';
     dlWrap.style.display='inline';
 
-    // Email via Edge Function + get Word doc back
-    btn.textContent='Sending invoice...';
-    try {
-      const res = await fetch(`${SB_URL}/functions/v1/generate-invoice`,{
-        method:'POST',
-        headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify(invoiceData)
-      });
-      if (res.ok) {
-        const result = await res.json();
-        if (result.docx && result.filename) {
-          // Build Word download link from base64
-          const binary = atob(result.docx);
-          const bytes = new Uint8Array(binary.length);
-          for (let i=0; i<binary.length; i++) bytes[i]=binary.charCodeAt(i);
-          const docxBlob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
-          const docxUrl = URL.createObjectURL(docxBlob);
-          docxLink.href=docxUrl;
-          docxLink.download=result.filename;
-          docxLink.style.display='inline';
-        }
-      }
-    } catch(emailErr){ console.warn('Email/docx failed, HTML view still available'); }
-
-    // Clear form
+    // Clear form immediately — don't wait for email
     ['f-tech','f-other-name','f-state','f-company','f-comprep','f-pad','f-po','f-notes'].forEach(id=>{
-      const el=document.getElementById(id); el.value='';
+      const el=document.getElementById(id); if(el) el.value='';
     });
     document.getElementById('f-other-name').style.display='none';
     document.getElementById('product-lines').innerHTML='';
@@ -557,6 +533,25 @@ async function submitPull() {
     const msg=document.getElementById('pull-success');
     msg.style.display='block';
     setTimeout(()=>{msg.style.display='none';dlWrap.style.display='none';docxLink.style.display='none';},30000);
+
+    // Fire email + Word doc in background — non-blocking
+    fetch(`${SB_URL}/functions/v1/generate-invoice`,{
+      method:'POST',
+      headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},
+      body:JSON.stringify(invoiceData)
+    }).then(res => {
+      if (res.ok) return res.json();
+    }).then(result => {
+      if (result && result.docx && result.filename) {
+        const binary = atob(result.docx);
+        const bytes = new Uint8Array(binary.length);
+        for (let i=0; i<binary.length; i++) bytes[i]=binary.charCodeAt(i);
+        const docxBlob = new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+        docxLink.href=URL.createObjectURL(docxBlob);
+        docxLink.download=result.filename;
+        docxLink.style.display='inline';
+      }
+    }).catch(e => console.warn('Background email/docx failed:', e));
 
   } catch(e){console.error(e);alert('Error saving. Check your connection.');}
   btn.disabled=false; btn.textContent='Submit pull + generate invoice';
