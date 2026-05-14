@@ -491,11 +491,14 @@ async function submitPull() {
   btn.disabled=true; btn.textContent='Saving...';
 
   try {
+    // Generate a shared ticket_id for all lines in this pull
+    const ticketId = crypto.randomUUID();
+
     for (const line of lines) {
       const p = inventory.find(x=>x.id===line.pid);
       await api('transactions',{method:'POST',prefer:'return=minimal',body:JSON.stringify({
         tech,state,product:p.name,qty:line.qty,pad,po,notes,
-        company,company_rep:companyRep
+        company,company_rep:companyRep,ticket_id:ticketId
       })});
       await api(`inventory?id=eq.${p.id}`,{method:'PATCH',prefer:'return=minimal',body:JSON.stringify({qty:p.qty-line.qty})});
     }
@@ -667,73 +670,117 @@ function renderLog() {
   const empty=document.getElementById('log-empty');
   if(!filtered.length){tbody.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
-  tbody.innerHTML=filtered.map(t=>{
-    const d=new Date(t.created_at);
-    const ds=d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-    const safeProduct = t.product.replace(/'/g,"\\'").replace(/"/g,'&quot;');
-    const safeCompany = (t.company||'—').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-    return`<tr>
-      <td class="mono" style="font-size:11px">${ds}</td>
-      <td style="font-size:12px">${t.tech}</td>
-      <td style="font-size:12px">${t.company||'—'}</td>
-      <td style="font-size:12px">${t.product}</td>
-      <td class="mono" style="font-weight:600">${t.qty}</td>
-      <td style="font-size:12px">${t.pad}</td>
-      <td class="mono" style="font-size:11px">${t.po}</td>
-      <td style="font-size:12px">${t.state.split(' ')[0]}</td>
-      <td style="font-size:12px;color:var(--text-muted)">${t.notes||'—'}</td>
-      <td style="text-align:center;"><button onclick="confirmDelete(${t.id},'${safeProduct}',${t.qty})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;padding:2px 6px;" title="Delete and restore inventory">×</button></td>
-    </tr>`;
+
+  // Group by ticket_id — rows without ticket_id each get their own group
+  const groups=[];
+  const seen={};
+  filtered.forEach(t=>{
+    const key = t.ticket_id || `solo-${t.id}`;
+    if(!seen[key]){seen[key]=[];groups.push({key,rows:seen[key]});}
+    seen[key].push(t);
+  });
+
+  tbody.innerHTML = groups.map((g,gi)=>{
+    const rows = g.rows;
+    const first = rows[0];
+    const d = new Date(first.created_at);
+    const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    const ticketKey = JSON.stringify(g.key).replace(/"/g,'&quot;');
+    const rowspan = rows.length;
+    const bgEven = gi%2===0 ? '' : 'background:rgba(255,255,255,0.02)';
+
+    return rows.map((t,i)=>{
+      const isFirst = i===0;
+      const sharedCells = isFirst ? `
+        <td class="mono" style="font-size:11px;vertical-align:top;padding-top:11px;${bgEven}" rowspan="${rowspan}">${ds}</td>
+        <td style="font-size:12px;vertical-align:top;padding-top:11px;${bgEven}" rowspan="${rowspan}">${t.tech}</td>
+        <td style="font-size:12px;vertical-align:top;padding-top:11px;${bgEven}" rowspan="${rowspan}">${t.company||'—'}</td>` : '';
+      const deletCell = isFirst ? `<td style="text-align:center;vertical-align:top;padding-top:8px;${bgEven}" rowspan="${rowspan}">
+        <button onclick='confirmDeleteTicket(${JSON.stringify(g.key)})' style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;padding:2px 6px;" title="Delete entire ticket">×</button>
+      </td>` : '';
+      return `<tr style="${bgEven}">
+        ${sharedCells}
+        <td style="font-size:12px;${bgEven}">${t.product}</td>
+        <td class="mono" style="font-weight:600;${bgEven}">${t.qty}</td>
+        <td style="font-size:12px;${bgEven}">${t.pad}</td>
+        <td class="mono" style="font-size:11px;${bgEven}">${t.po}</td>
+        <td style="font-size:12px;${bgEven}">${t.state.split(' ')[0]}</td>
+        <td style="font-size:12px;color:var(--text-muted);${bgEven}">${t.notes||'—'}</td>
+        ${deletCell}
+      </tr>`;
+    }).join('');
   }).join('');
 }
 
-function confirmDelete(id, product, qty) {
-  // Build name selector overlay
+function confirmDeleteTicket(ticketKey) {
+  // Find all rows in this ticket
+  const ticketRows = transactions.filter(t => (t.ticket_id || `solo-${t.id}`) === ticketKey);
+  if (!ticketRows.length) return;
+
+  const first = ticketRows[0];
+  const productSummary = ticketRows.map(t=>`${t.product} ×${t.qty}`).join(', ');
+
   const overlay = document.createElement('div');
   overlay.id = 'delete-overlay';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;';
-  
-  const techOptions = techs.map(t=>`<option value="${t}">${t}</option>`).join('');
-  
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+  // Build techs list — deduplicated, include Derek
+  const allNames = [...new Set([...techs, 'Derek Allen'])];
+  const techOptions = allNames.map(t=>`<option value="${t}">${t}</option>`).join('');
+
   overlay.innerHTML = `
-    <div style="background:var(--navy-mid);border:1px solid var(--border-bright);padding:2rem;max-width:420px;width:90%;border-left:3px solid var(--danger);">
-      <p style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--danger);margin-bottom:1rem;">Confirm Delete</p>
-      <p style="font-size:13px;color:var(--text-muted);margin-bottom:1.25rem;">This will permanently delete the transaction for <strong style="color:var(--text)">${product}</strong> (${qty} unit${qty!==1?'s':''}) and restore the quantity to inventory.</p>
-      <label style="display:block;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Your name *</label>
-      <select id="delete-name-sel" style="width:100%;background:var(--navy);border:1px solid var(--border-bright);color:var(--text);padding:9px 12px;font-family:'Barlow',sans-serif;font-size:14px;margin-bottom:1.25rem;border-radius:0;-webkit-appearance:none;">
+    <div style="background:#112240;border:1px solid rgba(255,255,255,0.15);padding:2rem;max-width:440px;width:90%;border-left:3px solid var(--danger);">
+      <p style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--danger);margin-bottom:0.75rem;">Delete Entire Ticket</p>
+      <p style="font-size:13px;color:#7a9ab8;margin-bottom:0.5rem;">This will delete all product lines for this pull and restore quantities to inventory:</p>
+      <p style="font-size:13px;color:#e8edf2;font-weight:500;margin-bottom:1.25rem;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">${productSummary}</p>
+      <label style="display:block;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#4a6a8a;margin-bottom:6px;">Your name *</label>
+      <select id="delete-name-sel" style="width:100%;background:#0B1929;border:1px solid rgba(255,255,255,0.15);color:#e8edf2;padding:9px 12px;font-family:'Barlow',sans-serif;font-size:14px;margin-bottom:1.25rem;border-radius:0;-webkit-appearance:none;outline:none;">
         <option value="">Select your name...</option>
         ${techOptions}
-        <option value="Derek Allen">Derek Allen</option>
       </select>
       <div style="display:flex;gap:10px;">
-        <button onclick="executeDelete(${id},'${product}',${qty})" style="flex:1;background:var(--danger);color:white;border:none;padding:10px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">Delete & Restore</button>
-        <button onclick="document.getElementById('delete-overlay').remove()" style="flex:1;background:none;border:1px solid var(--border-bright);color:var(--text-muted);padding:10px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">Cancel</button>
+        <button id="confirm-delete-btn" style="flex:1;background:var(--danger);color:white;border:none;padding:11px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">Delete & Restore</button>
+        <button onclick="document.getElementById('delete-overlay').remove()" style="flex:1;background:none;border:1px solid rgba(255,255,255,0.15);color:#7a9ab8;padding:11px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">Cancel</button>
       </div>
     </div>`;
+
   document.body.appendChild(overlay);
+
+  // Attach click handler directly — no inline onclick to avoid quoting issues
+  document.getElementById('confirm-delete-btn').addEventListener('click', () => {
+    executeDeleteTicket(ticketRows);
+  });
 }
 
-async function executeDelete(id, product, qty) {
+async function executeDeleteTicket(ticketRows) {
   const nameEl = document.getElementById('delete-name-sel');
   const deletedBy = nameEl ? nameEl.value.trim() : '';
   if (!deletedBy) { alert('Select your name before deleting.'); return; }
-  
-  document.getElementById('delete-overlay').remove();
-  
+
+  const overlay = document.getElementById('delete-overlay');
+  if (overlay) overlay.remove();
+
   try {
-    const p = inventory.find(x => x.name === product);
-    if (p) {
-      await api(`inventory?id=eq.${p.id}`, {method:'PATCH', prefer:'return=minimal', body: JSON.stringify({qty: p.qty + qty})});
+    // Restore inventory for each product line
+    for (const t of ticketRows) {
+      const p = inventory.find(x => x.name === t.product);
+      if (p) await api(`inventory?id=eq.${p.id}`,{method:'PATCH',prefer:'return=minimal',body:JSON.stringify({qty:p.qty+t.qty})});
+      await api(`transactions?id=eq.${t.id}`,{method:'DELETE',prefer:'return=minimal'});
     }
-    await api(`transactions?id=eq.${id}`, {method:'DELETE', prefer:'return=minimal'});
-    await api('transactions', {method:'POST', prefer:'return=minimal', body: JSON.stringify({
-      tech: deletedBy, state: 'Warehouse', product, qty,
-      pad: 'Transaction deleted', po: '—',
-      notes: `${deletedBy} deleted transaction #${id} — restored ${qty} unit(s) to inventory`
+
+    // Log one correction entry for the whole ticket
+    const productSummary = ticketRows.map(t=>`${t.product} ×${t.qty}`).join(', ');
+    const first = ticketRows[0];
+    await api('transactions',{method:'POST',prefer:'return=minimal',body:JSON.stringify({
+      tech: deletedBy, state: 'Warehouse',
+      product: `DELETED TICKET — ${productSummary}`,
+      qty: 0, pad: first.pad||'—', po: first.po||'—',
+      notes: `${deletedBy} deleted ticket (${ticketRows.length} line${ticketRows.length!==1?'s':''}) — all quantities restored`
     })});
+
     await Promise.all([loadInventory(), loadTransactions()]);
     renderLog();
-  } catch(e) { alert('Error deleting transaction. Try again.'); }
+  } catch(e) { alert('Error deleting ticket. Try again.'); }
 }
 
 function exportCSV() {
