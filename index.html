@@ -217,13 +217,13 @@
       <div class="table-scroll">
         <table>
           <thead><tr>
-            <th style="width:13%">Date / time</th><th style="width:12%">Tech</th>
-            <th style="width:19%">Product</th><th style="width:6%">Qty</th>
-            <th style="width:13%">Pad name</th><th style="width:11%">PO / job</th>
-            <th style="width:10%">State</th><th style="width:9%">Notes</th>
-            <th style="width:7%">Delete</th>
+            <th style="width:11%">Date / time</th><th style="width:10%">Tech</th>
+            <th style="width:13%">Company</th><th style="width:16%">Product</th><th style="width:5%">Qty</th>
+            <th style="width:11%">Pad name</th><th style="width:9%">PO / job</th>
+            <th style="width:8%">State</th><th style="width:8%">Notes</th>
+            <th style="width:9%">Delete</th>
           </tr></thead>
-          <tbody id="log-table"><tr><td colspan="9" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
+          <tbody id="log-table"><tr><td colspan="10" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
         </table>
         <div class="empty" id="log-empty" style="display:none;">NO TRANSACTIONS YET</div>
       </div>
@@ -610,7 +610,7 @@ th{background:#1F3864;color:white;padding:5px 7px;text-align:left;font-size:11px
   </div>
   <div>
     <div class="inv-date">Date: ${date}</div>
-    <div class="inv-num">Invoice # ${invoiceNumber}</div>
+    <div class="inv-num">Invoice # _______________</div>
   </div>
 </div>
 <table style="margin-bottom:8px">
@@ -675,35 +675,66 @@ function renderLog() {
   tbody.innerHTML=filtered.map(t=>{
     const d=new Date(t.created_at);
     const ds=d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    const safeProduct = t.product.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    const safeCompany = (t.company||'—').replace(/'/g,"\\'").replace(/"/g,'&quot;');
     return`<tr>
       <td class="mono" style="font-size:11px">${ds}</td>
-      <td style="font-size:13px">${t.tech}</td>
-      <td style="font-size:13px">${t.product}</td>
+      <td style="font-size:12px">${t.tech}</td>
+      <td style="font-size:12px">${t.company||'—'}</td>
+      <td style="font-size:12px">${t.product}</td>
       <td class="mono" style="font-weight:600">${t.qty}</td>
       <td style="font-size:12px">${t.pad}</td>
       <td class="mono" style="font-size:11px">${t.po}</td>
       <td style="font-size:12px">${t.state.split(' ')[0]}</td>
       <td style="font-size:12px;color:var(--text-muted)">${t.notes||'—'}</td>
-      <td style="text-align:center;"><button onclick="deleteTransaction(${t.id},'${t.product.replace(/'/g,"\\'")}',${t.qty})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;padding:2px 6px;" title="Delete and restore inventory">×</button></td>
+      <td style="text-align:center;"><button onclick="confirmDelete(${t.id},'${safeProduct}',${t.qty})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;padding:2px 6px;" title="Delete and restore inventory">×</button></td>
     </tr>`;
   }).join('');
 }
 
-async function deleteTransaction(id, product, qty) {
-  if (!confirm(`Delete this transaction and restore ${qty} unit(s) of "${product}" to inventory?`)) return;
+function confirmDelete(id, product, qty) {
+  // Build name selector overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'delete-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;';
+  
+  const techOptions = techs.map(t=>`<option value="${t}">${t}</option>`).join('');
+  
+  overlay.innerHTML = `
+    <div style="background:var(--navy-mid);border:1px solid var(--border-bright);padding:2rem;max-width:420px;width:90%;border-left:3px solid var(--danger);">
+      <p style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--danger);margin-bottom:1rem;">Confirm Delete</p>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:1.25rem;">This will permanently delete the transaction for <strong style="color:var(--text)">${product}</strong> (${qty} unit${qty!==1?'s':''}) and restore the quantity to inventory.</p>
+      <label style="display:block;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Your name *</label>
+      <select id="delete-name-sel" style="width:100%;background:var(--navy);border:1px solid var(--border-bright);color:var(--text);padding:9px 12px;font-family:'Barlow',sans-serif;font-size:14px;margin-bottom:1.25rem;border-radius:0;-webkit-appearance:none;">
+        <option value="">Select your name...</option>
+        ${techOptions}
+        <option value="Derek Allen">Derek Allen</option>
+      </select>
+      <div style="display:flex;gap:10px;">
+        <button onclick="executeDelete(${id},'${product}',${qty})" style="flex:1;background:var(--danger);color:white;border:none;padding:10px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">Delete & Restore</button>
+        <button onclick="document.getElementById('delete-overlay').remove()" style="flex:1;background:none;border:1px solid var(--border-bright);color:var(--text-muted);padding:10px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function executeDelete(id, product, qty) {
+  const nameEl = document.getElementById('delete-name-sel');
+  const deletedBy = nameEl ? nameEl.value.trim() : '';
+  if (!deletedBy) { alert('Select your name before deleting.'); return; }
+  
+  document.getElementById('delete-overlay').remove();
+  
   try {
-    // Restore inventory
     const p = inventory.find(x => x.name === product);
     if (p) {
       await api(`inventory?id=eq.${p.id}`, {method:'PATCH', prefer:'return=minimal', body: JSON.stringify({qty: p.qty + qty})});
     }
-    // Delete transaction
     await api(`transactions?id=eq.${id}`, {method:'DELETE', prefer:'return=minimal'});
-    // Log the correction
     await api('transactions', {method:'POST', prefer:'return=minimal', body: JSON.stringify({
-      tech: 'Admin', state: 'Warehouse', product, qty,
+      tech: deletedBy, state: 'Warehouse', product, qty,
       pad: 'Transaction deleted', po: '—',
-      notes: `Restored ${qty} unit(s) — transaction #${id} deleted`
+      notes: `${deletedBy} deleted transaction #${id} — restored ${qty} unit(s) to inventory`
     })});
     await Promise.all([loadInventory(), loadTransactions()]);
     renderLog();
@@ -713,11 +744,11 @@ async function deleteTransaction(id, product, qty) {
 function exportCSV() {
   const filtered = getFilteredTransactions();
   if (!filtered.length){alert('No records to export with current filters.');return;}
-  const headers = ['Date','Tech','Product','Qty','Pad Name','PO / Job','State','Notes'];
+  const headers = ['Date','Tech','Company','Product','Qty','Pad Name','PO / Job','State','Notes'];
   const rows = filtered.map(t=>{
     const d = new Date(t.created_at);
     const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-    return [ds, t.tech, t.product, t.qty, t.pad, t.po, t.state, t.notes||''].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',');
+    return [ds, t.tech, t.company||'', t.product, t.qty, t.pad, t.po, t.state, t.notes||''].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',');
   });
   const csv = [headers.join(','), ...rows].join('\n');
   const blob = new Blob([csv], {type:'text/csv'});
